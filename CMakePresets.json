@@ -1,0 +1,11 @@
+{
+    "version": 2,
+    "configurePresets": [
+        {
+            "name": "all",
+            "displayName": "All Multi-Config",
+            "binaryDir": "${sourceDir}/build",
+            "generator": "Ninja Multi-Config"
+        }
+    ]
+}
