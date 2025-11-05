@@ -46,8 +46,8 @@ set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF)
 
 include(FetchContent)
 FetchContent_Declare(httplib
-    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib
-    GIT_TAG        v0.27.0
+    GIT_REPOSITORY https://github.com/theo-dep/cpp-httplib
+    GIT_TAG        49b526c1ec4a8c09bba0f5163c004024b5130a8c
 )
 FetchContent_MakeAvailable(httplib)
 

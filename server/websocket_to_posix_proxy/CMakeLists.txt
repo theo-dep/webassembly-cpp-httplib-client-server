@@ -1,21 +1,19 @@
-cmake_minimum_required(VERSION 3.5)
+add_library(websocket_to_posix_proxy STATIC
+    src/connect_websocket.cpp
+    src/sha1.cpp
+    src/socket_registry.cpp
+    src/websocket_to_posix_proxy.c
+)
 
-project(websocket_to_posix_proxy)
+target_include_directories(websocket_to_posix_proxy PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 if (WIN32)
-  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-  add_compile_options(/wd4200) # "nonstandard extension used: zero-sized array in struct/union"
+    target_compile_definitions(websocket_to_posix_proxy PUBLIC _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(websocket_to_posix_proxy PRIVATE /wd4200) # "nonstandard extension used: zero-sized array in struct/union"
+    target_link_libraries(websocket_to_posix_proxy PUBLIC Ws2_32)
 else()
-  add_compile_options(-Werror -Wall)
+    target_compile_options(websocket_to_posix_proxy PRIVATE -Werror -Wall)
 endif()
-
-file(GLOB sourceFiles src/*.cpp src/*.c src/*.h)
-
-add_executable(websocket_to_posix_proxy ${sourceFiles})
 
 find_package(Threads)
-target_link_libraries(websocket_to_posix_proxy ${CMAKE_THREAD_LIBS_INIT})
-
-if (WIN32)
-  target_link_libraries(websocket_to_posix_proxy Ws2_32.lib)
-endif()
+target_link_libraries(websocket_to_posix_proxy PUBLIC ${CMAKE_THREAD_LIBS_INIT})

@@ -4,6 +4,10 @@
 
 int main()
 {
+#ifdef __EMSCRIPTEN__
+    httplib::emscripten_init_websocket("ws://localhost:5000");
+#endif
+
     httplib::Client cli("localhost", 8080);
 
     if (auto res = cli.Get("/hi")) {

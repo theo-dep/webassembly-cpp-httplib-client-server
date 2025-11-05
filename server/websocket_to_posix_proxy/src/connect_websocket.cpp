@@ -33,7 +33,6 @@ static void base64_encode(void *dst, const void *src, size_t len) { // thread-sa
 }
 
 #define BUFFER_SIZE 1024
-#define on_error(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr); exit(1); }
 #define MIN(a, b) ((a) <= (b) ? (a) : (b))
 
 // Given a multiline string of HTTP headers, returns a pointer to the beginning
@@ -61,7 +60,7 @@ void SendHandshake(int fd, const char *request) {
   printf("hashing key: \"%s\"\n", key);
   SHA1(sha1, key, (int)strlen(key));
 
-  char handshakeMsg[] = 
+  char handshakeMsg[] =
     "HTTP/1.1 101 Switching Protocols\r\n"
     "Upgrade: websocket\r\n"
     "Connection: Upgrade\r\n"
@@ -71,7 +70,11 @@ void SendHandshake(int fd, const char *request) {
   base64_encode(strstr(handshakeMsg, "Sec-WebSocket-Accept: ") + strlen("Sec-WebSocket-Accept: "), sha1, 20);
 
   int err = send(fd, handshakeMsg, (int)strlen(handshakeMsg), 0);
-  if (err < 0) on_error("Client write failed\n");
+  if (err < 0) {
+    fprintf(stderr, "Client write failed\n");
+    return;
+  }
+
   printf("Sent handshake:\n%s\n", handshakeMsg);
 }
 
@@ -174,7 +177,7 @@ const char *WebSocketOpcodeToString(int opcode) {
     "reserved(0xC)",
     "reserved(0xD)",
     "reserved(0xE)",
-    "reserved(0xF)" 
+    "reserved(0xF)"
   };
   return opcodes[opcode];
 }
@@ -328,9 +331,9 @@ extern "C" void unlock_websocket_send_lock() {
   UNLOCK_MUTEX(&webSocketSendLock);
 }
 
-int main(int argc, char *argv[]) {
-  if (argc < 2) on_error("websocket_to_posix_proxy creates a bridge that allows WebSocket connections on a web page to proxy out to perform TCP/UDP connections.\nUsage: %s [port]\n", argv[0]);
+SOCKET_T server_fd;
 
+bool connect_websocket_server(int port) {
 #ifdef _WIN32
   WSADATA wsaData;
   int failed = WSAStartup(MAKEWORD(2,2), &wsaData);
@@ -342,9 +345,11 @@ int main(int argc, char *argv[]) {
   signal(SIGPIPE, SIG_IGN);
 #endif
 
-  const int port = atoi(argv[1]);
-  SOCKET_T server_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_fd < 0) on_error("Could not create socket\n");
+  server_fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (server_fd < 0) {
+    fprintf(stderr, "Could not create socket\n");
+    return false;
+  }
 
   struct sockaddr_in server;
   server.sin_family = AF_INET;
@@ -355,34 +360,44 @@ int main(int argc, char *argv[]) {
   setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, (SETSOCKOPT_PTR_TYPE)&opt_val, sizeof opt_val);
 
   int err = bind(server_fd, (struct sockaddr *) &server, sizeof(server));
-  if (err < 0) on_error("Could not bind socket\n");
+  if (err < 0) {
+    fprintf(stderr, "Could not bind socket\n");
+    return false;
+  }
 
   err = listen(server_fd, 128);
-  if (err < 0) on_error("Could not listen on socket\n");
+  if (err < 0) {
+    fprintf(stderr, "Could not listen on socket\n");
+    return false;
+  }
 
   printf("websocket_to_posix_proxy server is now listening for WebSocket connections to ws://localhost:%d/\n", port);
 
   CREATE_MUTEX(&webSocketSendLock);
   InitWebSocketRegistry();
 
-  while (1) {
-    SOCKET_T client_fd = accept(server_fd, 0, 0);
-    if (client_fd < 0) {
-      fprintf(stderr, "Could not establish new incoming proxy connection\n");
-      continue; // Do not quit here, but keep serving any existing proxy connections.
-    }
+  return true;
+}
 
-    THREAD_T connection;
-    CREATE_THREAD_RETURN_T ret = CREATE_THREAD(connection, connection_thread, (void*)(uintptr_t)client_fd);
-    if (!CREATE_THREAD_SUCCEEDED(ret)) {
-      fprintf(stderr, "Failed to create a connection handler thread for incoming proxy connection!\n");
-      continue; // Do not quit here, but keep program alive to manage other existing proxy connections.
-    }
+bool connect_websocket_client() {
+  SOCKET_T client_fd = accept(server_fd, 0, 0);
+  if (client_fd < 0) {
+    fprintf(stderr, "Could not establish new incoming proxy connection\n");
+    return false;
   }
 
+  THREAD_T connection;
+  CREATE_THREAD_RETURN_T ret = CREATE_THREAD(connection, connection_thread, (void*)(uintptr_t)client_fd);
+  if (!CREATE_THREAD_SUCCEEDED(ret)) {
+    fprintf(stderr, "Failed to create a connection handler thread for incoming proxy connection!\n");
+    return false;
+  }
+
+  return true;
+}
+
+void disconnect_websocket_server() {
 #ifdef _WIN32
   WSACleanup();
 #endif
-
-  return 0;
 }
