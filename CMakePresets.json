@@ -3,9 +3,29 @@
     "configurePresets": [
         {
             "name": "all",
-            "displayName": "All Multi-Config",
             "binaryDir": "${sourceDir}/build",
             "generator": "Ninja Multi-Config"
+        },
+        {
+            "name": "server",
+            "inherits": "all",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "BUILD_ALL": false,
+                "BUILD_SERVER": true,
+                "PROJECT_TOP_BINARY_DIR": "${sourceDir}/build"
+            }
+        },
+        {
+            "name": "client",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "inherits": "all",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+                "BUILD_ALL": false,
+                "BUILD_CLIENT": true,
+                "PROJECT_TOP_BINARY_DIR": "${sourceDir}/build"
+            }
         }
     ]
 }

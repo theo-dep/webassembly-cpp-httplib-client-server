@@ -27,6 +27,8 @@ int main(int, char** argv)
 
     const std::filesystem::path current_path{ std::filesystem::path(argv[0]).parent_path() };
 
+    printf("server is now listening to http://localhost:8080/\n");
+
     const int res = httplib::Server()
 
         .set_post_routing_handler([](const httplib::Request&, httplib::Response& res) {
