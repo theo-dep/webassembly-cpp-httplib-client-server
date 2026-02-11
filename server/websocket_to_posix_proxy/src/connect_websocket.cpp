@@ -205,42 +205,9 @@ void DumpWebSocketMessage(uint8_t *data, uint64_t numBytes) {
   printf("\n");
 }
 
-// connection thread manages a single active proxy connection.
-THREAD_RETURN_T connection_thread(void *arg) {
-  int client_fd = (int)(uintptr_t)arg;
-  // TODO: print out getpeername()+getsockname() for more info
-  printf("Established new proxy connection handler thread for incoming connection, at fd=%d\n", client_fd);
-
-  // Waiting for connection upgrade handshake
-  char buf[BUFFER_SIZE];
-  int read = recv(client_fd, buf, BUFFER_SIZE, 0);
-
-  if (!read) {
-    CloseWebSocket(client_fd);
-    EXIT_THREAD(0);
-  }
-
-  if (read < 0) {
-    fprintf(stderr, "Client read failed\n");
-    CloseWebSocket(client_fd);
-    EXIT_THREAD(0);
-  }
-
-#ifdef PROXY_DEEP_DEBUG
-  printf("Received:");
-  for (int i = 0; i < read; ++i) {
-    printf(" %02X", buf[i]);
-  }
-  printf("\n");
-  //printf("In text:\n%s\n", buf);
-#endif
-  SendHandshake(client_fd, buf);
-
-#ifdef PROXY_DEEP_DEBUG
-  printf("Handshake received, entering message loop:\n");
-#endif
-
+void wait_websocket_client(int client_fd) {
   std::vector<uint8_t> fragmentData;
+  char buf[BUFFER_SIZE];
 
   bool connectionAlive = true;
   while (connectionAlive) {
@@ -249,7 +216,7 @@ THREAD_RETURN_T connection_thread(void *arg) {
     if (!read) break; // done reading
     if (read < 0) {
       fprintf(stderr, "Client read failed\n");
-      EXIT_THREAD(0);
+      return;
     }
 
 #ifdef PROXY_DEEP_DEBUG
@@ -310,6 +277,45 @@ THREAD_RETURN_T connection_thread(void *arg) {
 #endif
     }
   }
+}
+
+// connection thread manages a single active proxy connection.
+THREAD_RETURN_T connection_thread(void *arg) {
+  int client_fd = (int)(uintptr_t)arg;
+  // TODO: print out getpeername()+getsockname() for more info
+  printf("Established new proxy connection handler thread for incoming connection, at fd=%d\n", client_fd);
+
+  // Waiting for connection upgrade handshake
+  char buf[BUFFER_SIZE];
+  int read = recv(client_fd, buf, BUFFER_SIZE, 0);
+
+  if (!read) {
+    CloseWebSocket(client_fd);
+    EXIT_THREAD(0);
+  }
+
+  if (read < 0) {
+    fprintf(stderr, "Client read failed\n");
+    CloseWebSocket(client_fd);
+    EXIT_THREAD(0);
+  }
+
+#ifdef PROXY_DEEP_DEBUG
+  printf("Received:");
+  for (int i = 0; i < read; ++i) {
+    printf(" %02X", buf[i]);
+  }
+  printf("\n");
+  //printf("In text:\n%s\n", buf);
+#endif
+  SendHandshake(client_fd, buf);
+
+#ifdef PROXY_DEEP_DEBUG
+  printf("Handshake received, entering message loop:\n");
+#endif
+
+  wait_websocket_client(client_fd);
+
   printf("Proxy connection closed\n");
   CloseWebSocket(client_fd);
   EXIT_THREAD(0);
@@ -329,6 +335,11 @@ extern "C" void lock_websocket_send_lock() {
 
 extern "C" void unlock_websocket_send_lock() {
   UNLOCK_MUTEX(&webSocketSendLock);
+}
+
+void initWebSocketSendLock() {
+  CREATE_MUTEX(&webSocketSendLock);
+  InitWebSocketRegistry();
 }
 
 SOCKET_T server_fd;
@@ -373,8 +384,7 @@ bool connect_websocket_server(int port) {
 
   printf("websocket_to_posix_proxy server is now listening for WebSocket connections to ws://localhost:%d/\n", port);
 
-  CREATE_MUTEX(&webSocketSendLock);
-  InitWebSocketRegistry();
+  initWebSocketSendLock();
 
   return true;
 }

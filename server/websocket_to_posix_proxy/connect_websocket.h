@@ -1,6 +1,9 @@
 #pragma once
 
-bool connect_websocket_server(int port);
-bool connect_websocket_client();
+#include <cstddef>
 
-void disconnect_websocket_server();
+void SHA1(char *hash_out, const char *str, int len);
+
+void initWebSocketSendLock();
+
+void wait_websocket_client(int client_fd);

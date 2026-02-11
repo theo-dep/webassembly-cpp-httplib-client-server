@@ -5,10 +5,12 @@
 int main()
 {
 #ifdef __EMSCRIPTEN__
-    httplib::emscripten_init_websocket("ws://localhost:5000");
+    httplib::emscripten_init_websocket("http://localhost:8080/ws");
 #endif
 
     httplib::Client cli("localhost", 8080);
+
+    std::println("client is now connecting to http://localhost:8080/");
 
     if (auto res = cli.Get("/hi")) {
         if (res->status == httplib::StatusCode::OK_200) {

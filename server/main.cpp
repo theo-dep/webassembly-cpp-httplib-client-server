@@ -3,31 +3,41 @@
 #include <httplib.h>
 
 #include <filesystem>
-#include <thread>
+#include <print>
+
+// Sends WebSocket handshake back to the given WebSocket connection.
+void SendHandshake(const httplib::Request& req, int fd) {
+    static constexpr std::string_view webSocketGlobalGuid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"; // 36 characters long
+    std::string key = req.get_header_value("Sec-WebSocket-Key");
+    key += webSocketGlobalGuid.data();
+
+    char sha1[21];
+    std::println("hashing key: \"{}\"", key);
+    SHA1(sha1, key.data(), key.size());
+
+    const std::string handshakeMsg =
+        "HTTP/1.1 101 Switching Protocols\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Accept: " + httplib::detail::base64_encode(sha1) + "\r\n"
+        "\r\n";
+
+    int err = send(fd, handshakeMsg.data(), handshakeMsg.size(), 0);
+    if (err < 0) {
+        std::println(stderr, "Client write failed\n");
+        return;
+    }
+
+    std::println("Sent handshake:\n{}\n", handshakeMsg);
+}
 
 int main(int, char** argv)
 {
-    if (!connect_websocket_server(5000)) {
-        return EXIT_FAILURE;
-    }
-
-    std::jthread websocket_worker(
-        [](std::stop_token stoken)
-        {
-            while (true) {
-                connect_websocket_client();
-
-                using namespace std::chrono_literals;
-                std::this_thread::sleep_for(300ms);
-
-                if (stoken.stop_requested())
-                    return;
-            }
-        });
+    initWebSocketSendLock();
 
     const std::filesystem::path current_path{ std::filesystem::path(argv[0]).parent_path() };
 
-    printf("server is now listening to http://localhost:8080/\n");
+    std::println("server is now listening to http://localhost:8080/");
 
     const int res = httplib::Server()
 
@@ -51,11 +61,14 @@ int main(int, char** argv)
             res.set_file_content((current_path / "client.html").string());
         })
 
-        //.Get("/ws", [](const httplib::Request&, httplib::Response& res) {
-        //    if (!connect_websocket_client()) {
-        //        res.status = httplib::StatusCode::InternalServerError_500;
-        //    }
-        //})
+        .Get("/ws", [](const httplib::Request& req, httplib::Response& res) {
+            std::println("try to connect to WebSocket connection");
+
+            SendHandshake(req, req.client_sock);
+            std::println("websocket_to_posix_proxy server is now listening to WebSocket connection");
+
+            wait_websocket_client(req.client_sock);
+        })
 
         .Get("/client.(js|wasm)", [&current_path](const httplib::Request& req, httplib::Response& res) {
             res.set_file_content((current_path / "client.").string() + req.matches[1].str());
@@ -66,11 +79,6 @@ int main(int, char** argv)
         })
 
         .listen("localhost", 8080) ? EXIT_SUCCESS : EXIT_FAILURE;
-
-    websocket_worker.request_stop();
-    websocket_worker.join();
-
-    disconnect_websocket_server();
 
     return res;
 }
