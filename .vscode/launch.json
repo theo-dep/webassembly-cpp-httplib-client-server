@@ -1,0 +1,76 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) Launch Server",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/Debug/server",
+            "cwd": "${workspaceFolder}/build/Debug",
+            "args": [],
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(vs) Launch Server",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/Debug/server.exe",
+            "cwd": "${workspaceFolder}/build/Debug",
+            "args": [],
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "environment": [],
+            "console": "integratedTerminal",
+            "logging": {
+                "moduleLoad": false,
+                "trace": true
+            }
+        },
+        {
+            "name": "(linux/chrome) Launch Client",
+            "type": "chrome",
+            "runtimeExecutable": "/usr/bin/brave-browser",
+            "request": "launch",
+            "url": "http://localhost:8080",
+            "webRoot": "${workspaceFolder}",
+            "enableDWARF": true
+        },
+        {
+            "name": "(windows/chrome) Launch Client",
+            "type": "chrome",
+            "runtimeExecutable": "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe",
+            "request": "launch",
+            "url": "http://localhost:8080",
+            "webRoot": "${workspaceFolder}",
+            "enableDWARF": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "(linux) Server/Client",
+            "configurations": [
+                "(gdb) Launch Server",
+                "(linux/chrome) Launch Client"
+            ]
+        },
+        {
+            "name": "(windows) Server/Client",
+            "configurations": [
+                "(vs) Launch Server",
+                "(windows/chrome) Launch Client"
+            ]
+        }
+    ]
+}

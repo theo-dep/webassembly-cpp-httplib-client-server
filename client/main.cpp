@@ -4,11 +4,13 @@
 
 int main()
 {
-#ifdef __EMSCRIPTEN__
-    httplib::emscripten_init_websocket("http://localhost:8080/ws");
-#endif
-
     httplib::Client cli("localhost", 8080);
+
+#ifdef __EMSCRIPTEN__
+    if (auto res = cli.connect_emscripten_websocket(); res != EMSCRIPTEN_RESULT_SUCCESS) {
+        std::println("WebSocket error: {}", res);
+    }
+#endif
 
     std::println("client is now connecting to http://localhost:8080/");
 

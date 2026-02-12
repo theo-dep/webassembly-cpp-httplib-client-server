@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${EMSDK}/upstream/emscripten/system/include",
+                "${workspaceFolder}/server/websocket_to_posix_proxy",
+                "${workspaceFolder}/httplib"
+            ],
+            "defines": [
+                "CPPHTTPLIB_USE_POLL",
+                "_DEBUG",
+                "__EMSCRIPTEN__"
+            ],
+            "cppStandard": "c++23",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
