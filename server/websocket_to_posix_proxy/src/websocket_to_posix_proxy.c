@@ -100,13 +100,7 @@ void WebSocketMessageUnmaskPayload(uint8_t* payload,
   }
 }
 
-void lock_websocket_send_lock(void);
-void unlock_websocket_send_lock(void);
-
 void SendWebSocketMessage(int client_fd, void *buf, uint64_t numBytes) {
-  // Guard send() calls to the client_fd socket so that two threads won't ever race to send to the
-  // same socket. (This could be per-socket, currently global for simplicity)
-  lock_websocket_send_lock();
   uint8_t headerData[sizeof(WebSocketMessageHeader) + 8/*possible extended length*/];
   memset(headerData, 0, sizeof(headerData));
   WebSocketMessageHeader *header = (WebSocketMessageHeader *)headerData;
@@ -141,7 +135,6 @@ void SendWebSocketMessage(int client_fd, void *buf, uint64_t numBytes) {
 
   send(client_fd, (const char*)headerData, headerBytes, 0); // header
   send(client_fd, (const char*)buf, (int)numBytes, 0); // payload
-  unlock_websocket_send_lock();
 }
 
 #define MUSL_PF_UNSPEC       0

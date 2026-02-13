@@ -13,8 +13,6 @@
 #include "websocket_to_posix_proxy.h"
 #include "socket_registry.h"
 
-// #define PROXY_DEBUG
-
 // #define PROXY_DEEP_DEBUG
 
 static const unsigned char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -33,27 +31,12 @@ static void base64_encode(void *dst, const void *src, size_t len) { // thread-sa
 }
 
 #define BUFFER_SIZE 1024
-#define MIN(a, b) ((a) <= (b) ? (a) : (b))
-
-// Given a multiline string of HTTP headers, returns a pointer to the beginning
-// of the value of given header inside the string that was passed in.
-static int GetHttpHeader(const char *headers, const char *header, char *out, int maxBytesOut) { // thread-safe, re-entrant
-  const char *pos = strstr(headers, header);
-  if (!pos) return 0;
-  pos += strlen(header);
-  const char *end = pos;
-  while (*end != '\r' && *end != '\n' && *end != '\0') ++end;
-  int numBytesToWrite = MIN((int)(end-pos), maxBytesOut-1);
-  memcpy(out, pos, numBytesToWrite);
-  out[numBytesToWrite] = '\0';
-  return (int)(end-pos);
-}
 
 // Sends WebSocket handshake back to the given WebSocket connection.
-void SendHandshake(int fd, const char *request) {
+void SendHandshake(int fd, const char* secWebSocketHeader) {
   const char webSocketGlobalGuid[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"; // 36 characters long
   char key[128+sizeof(webSocketGlobalGuid)];
-  GetHttpHeader(request, "Sec-WebSocket-Key: ", key, sizeof(key)/2);
+  strcpy(key, secWebSocketHeader);
   strcat(key, webSocketGlobalGuid);
 
   char sha1[21];
@@ -153,13 +136,6 @@ uint8_t *WebSocketMessageData(uint8_t *data, uint64_t numBytes) {
   }
 }
 
-void CloseWebSocket(int client_fd) {
-  printf("Closing WebSocket connection %d\n", client_fd);
-  CloseAllSocketsByConnection(client_fd);
-  shutdown(client_fd, SHUTDOWN_BIDIRECTIONAL);
-  CLOSE_SOCKET(client_fd);
-}
-
 const char *WebSocketOpcodeToString(int opcode) {
   static const char *opcodes[] = {
     "continuation frame (0x0)",
@@ -205,7 +181,9 @@ void DumpWebSocketMessage(uint8_t *data, uint64_t numBytes) {
   printf("\n");
 }
 
-void wait_websocket_client(int client_fd) {
+void connectWebSocketClient(int client_fd, const char* secWebSocketHeader) {
+  SendHandshake(client_fd, secWebSocketHeader);
+
   std::vector<uint8_t> fragmentData;
   char buf[BUFFER_SIZE];
 
@@ -279,135 +257,6 @@ void wait_websocket_client(int client_fd) {
   }
 }
 
-// connection thread manages a single active proxy connection.
-THREAD_RETURN_T connection_thread(void *arg) {
-  int client_fd = (int)(uintptr_t)arg;
-  // TODO: print out getpeername()+getsockname() for more info
-  printf("Established new proxy connection handler thread for incoming connection, at fd=%d\n", client_fd);
-
-  // Waiting for connection upgrade handshake
-  char buf[BUFFER_SIZE];
-  int read = recv(client_fd, buf, BUFFER_SIZE, 0);
-
-  if (!read) {
-    CloseWebSocket(client_fd);
-    EXIT_THREAD(0);
-  }
-
-  if (read < 0) {
-    fprintf(stderr, "Client read failed\n");
-    CloseWebSocket(client_fd);
-    EXIT_THREAD(0);
-  }
-
-#ifdef PROXY_DEEP_DEBUG
-  printf("Received:");
-  for (int i = 0; i < read; ++i) {
-    printf(" %02X", buf[i]);
-  }
-  printf("\n");
-  //printf("In text:\n%s\n", buf);
-#endif
-  SendHandshake(client_fd, buf);
-
-#ifdef PROXY_DEEP_DEBUG
-  printf("Handshake received, entering message loop:\n");
-#endif
-
-  wait_websocket_client(client_fd);
-
-  printf("Proxy connection closed\n");
-  CloseWebSocket(client_fd);
-  EXIT_THREAD(0);
-}
-
-// Technically only would need one lock per connection, but this is now one lock
-// per all connections, which would be slightly inefficient if we were handling
-// multiple proxied connections at the same time. (currently that is a rare use
-// case, expected to only be proxying one connection at a time - if this proxy
-// bridge is expected to be used for hundreds of connections simultaneously,
-// this mutex should be refactored to be per-connection)
-static MUTEX_T webSocketSendLock;
-
-extern "C" void lock_websocket_send_lock() {
-  LOCK_MUTEX(&webSocketSendLock);
-}
-
-extern "C" void unlock_websocket_send_lock() {
-  UNLOCK_MUTEX(&webSocketSendLock);
-}
-
-void initWebSocketSendLock() {
-  CREATE_MUTEX(&webSocketSendLock);
+void initWebSocketRegistry() {
   InitWebSocketRegistry();
-}
-
-SOCKET_T server_fd;
-
-bool connect_websocket_server(int port) {
-#ifdef _WIN32
-  WSADATA wsaData;
-  int failed = WSAStartup(MAKEWORD(2,2), &wsaData);
-  if (failed) {
-    printf("WSAStartup failed: %d\n", failed);
-    return 1;
-  }
-#else
-  signal(SIGPIPE, SIG_IGN);
-#endif
-
-  server_fd = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_fd < 0) {
-    fprintf(stderr, "Could not create socket\n");
-    return false;
-  }
-
-  struct sockaddr_in server;
-  server.sin_family = AF_INET;
-  server.sin_port = htons(port);
-  server.sin_addr.s_addr = htonl(INADDR_ANY);
-
-  int opt_val = 1;
-  setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, (SETSOCKOPT_PTR_TYPE)&opt_val, sizeof opt_val);
-
-  int err = bind(server_fd, (struct sockaddr *) &server, sizeof(server));
-  if (err < 0) {
-    fprintf(stderr, "Could not bind socket\n");
-    return false;
-  }
-
-  err = listen(server_fd, 128);
-  if (err < 0) {
-    fprintf(stderr, "Could not listen on socket\n");
-    return false;
-  }
-
-  printf("websocket_to_posix_proxy server is now listening for WebSocket connections to ws://localhost:%d/\n", port);
-
-  initWebSocketSendLock();
-
-  return true;
-}
-
-bool connect_websocket_client() {
-  SOCKET_T client_fd = accept(server_fd, 0, 0);
-  if (client_fd < 0) {
-    fprintf(stderr, "Could not establish new incoming proxy connection\n");
-    return false;
-  }
-
-  THREAD_T connection;
-  CREATE_THREAD_RETURN_T ret = CREATE_THREAD(connection, connection_thread, (void*)(uintptr_t)client_fd);
-  if (!CREATE_THREAD_SUCCEEDED(ret)) {
-    fprintf(stderr, "Failed to create a connection handler thread for incoming proxy connection!\n");
-    return false;
-  }
-
-  return true;
-}
-
-void disconnect_websocket_server() {
-#ifdef _WIN32
-  WSACleanup();
-#endif
 }
